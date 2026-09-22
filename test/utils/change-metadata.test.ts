@@ -78,6 +78,27 @@ describe('ChangeMetadataSchema', () => {
       }
     });
 
+    it('should accept depends_on as an array of kebab-case names', () => {
+      const result = ChangeMetadataSchema.safeParse({
+        schema: 'spec-driven',
+        depends_on: ['add-oauth-provider', 'add-2fa'],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.depends_on).toEqual(['add-oauth-provider', 'add-2fa']);
+      }
+    });
+
+    it('should accept metadata without depends_on, exactly as before the field existed', () => {
+      const result = ChangeMetadataSchema.safeParse({
+        schema: 'spec-driven',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.depends_on).toBeUndefined();
+      }
+    });
+
     it('should accept valid schema without created date', () => {
       const result = ChangeMetadataSchema.safeParse({
         schema: 'custom-schema',
@@ -165,6 +186,14 @@ describe('ChangeMetadataSchema', () => {
       const result = ChangeMetadataSchema.safeParse({
         schema: 'spec-driven',
         author: '',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject a non-kebab-case depends_on entry', () => {
+      const result = ChangeMetadataSchema.safeParse({
+        schema: 'spec-driven',
+        depends_on: ['Not_Kebab'],
       });
       expect(result.success).toBe(false);
     });

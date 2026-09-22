@@ -268,6 +268,44 @@ describe('createChange', () => {
     });
   });
 
+  describe('depends_on validation', () => {
+    it('should record depends_on naming a currently active change', async () => {
+      await createChange(testDir, 'add-oauth-provider');
+      await createChange(testDir, 'add-oauth-scopes', { metadata: { depends_on: ['add-oauth-provider'] } });
+
+      const metaPath = path.join(testDir, 'openspec', 'changes', 'add-oauth-scopes', '.openspec.yaml');
+      const content = await fs.readFile(metaPath, 'utf-8');
+      expect(content).toContain('depends_on:');
+      expect(content).toContain('add-oauth-provider');
+    });
+
+    it('should reject depends_on naming a change that is not currently active', async () => {
+      await expect(
+        createChange(testDir, 'add-oauth-scopes', { metadata: { depends_on: ['never-existed'] } })
+      ).rejects.toThrow(/never-existed/);
+
+      const changeDir = path.join(testDir, 'openspec', 'changes', 'add-oauth-scopes');
+      await expect(fs.stat(changeDir)).rejects.toThrow();
+    });
+
+    it('should reject a change depending on itself', async () => {
+      await expect(
+        createChange(testDir, 'add-oauth-scopes', { metadata: { depends_on: ['add-oauth-scopes'] } })
+      ).rejects.toThrow(/cannot depend on itself/);
+
+      const changeDir = path.join(testDir, 'openspec', 'changes', 'add-oauth-scopes');
+      await expect(fs.stat(changeDir)).rejects.toThrow();
+    });
+
+    it('should omit depends_on when no option is provided', async () => {
+      await createChange(testDir, 'add-auth');
+
+      const metaPath = path.join(testDir, 'openspec', 'changes', 'add-auth', '.openspec.yaml');
+      const content = await fs.readFile(metaPath, 'utf-8');
+      expect(content).not.toContain('depends_on');
+    });
+  });
+
   describe('duplicate change throws error', () => {
     it('should throw error if change already exists', async () => {
       await createChange(testDir, 'add-auth');

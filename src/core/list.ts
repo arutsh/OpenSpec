@@ -22,6 +22,10 @@ interface ChangeInfo {
   nested?: string[];
   priority?: 'low' | 'medium' | 'high';
   author?: string;
+  /** Raw `depends_on` from `.openspec.yaml`, unfiltered. */
+  dependsOn?: string[];
+  /** `dependsOn` filtered to entries that still name an active change. */
+  blockedBy?: string[];
 }
 
 interface ListOptions {
@@ -175,6 +179,12 @@ export class ListCommand {
           ...(nestedByName.has(changeDir) ? { nested: nestedByName.get(changeDir)!.nested } : {}),
           ...(metadata?.priority ? { priority: metadata.priority } : {}),
           ...(metadata?.author ? { author: metadata.author } : {}),
+          ...(metadata?.depends_on && metadata.depends_on.length > 0
+            ? {
+                dependsOn: metadata.depends_on,
+                blockedBy: metadata.depends_on.filter((dep) => changeDirs.includes(dep)),
+              }
+            : {}),
         });
       }
 
@@ -196,6 +206,7 @@ export class ListCommand {
           ...(c.nested ? { nested: c.nested } : {}),
           ...(c.priority ? { priority: c.priority } : {}),
           ...(c.author ? { author: c.author } : {}),
+          ...(c.dependsOn ? { depends_on: c.dependsOn } : {}),
         }));
         // Additive: the entries keep their shape so existing consumers are
         // unaffected, and the nesting is reported alongside them.
@@ -225,28 +236,33 @@ export class ListCommand {
       }));
       const hasPriority = changes.some(c => c.priority);
       const hasAuthor = changes.some(c => c.author);
+      const hasBlockedBy = changes.some(c => c.blockedBy && c.blockedBy.length > 0);
       const nameWidth = Math.max('Name'.length, ...changes.map(c => c.name.length));
       const statusWidth = Math.max('Status'.length, 12);
       const modifiedWidth = Math.max('Modified'.length, ...rows.map(r => r.timeAgo.length));
       const priorityWidth = Math.max('Priority'.length, ...changes.map(c => (c.priority ?? '').length));
+      const authorWidth = Math.max('Author'.length, ...changes.map(c => (c.author ?? '').length));
 
-      const buildLine = (name: string, status: string, modified: string, priority: string, author: string): string => {
+      const buildLine = (name: string, status: string, modified: string, priority: string, author: string, blockedBy: string): string => {
         let line = padding;
         if (hasPriority) {
           line += `${priority.padEnd(priorityWidth)}  `;
         }
         line += `${name.padEnd(nameWidth)}     ${status.padEnd(statusWidth)}  ${modified.padEnd(modifiedWidth)}`;
         if (hasAuthor) {
-          line += `  ${author}`;
+          line += `  ${author.padEnd(hasBlockedBy ? authorWidth : 0)}`;
+        }
+        if (hasBlockedBy) {
+          line += `  ${blockedBy}`;
         }
         return line.trimEnd();
       };
 
-      if (hasPriority || hasAuthor) {
-        console.log(buildLine('Name', 'Status', 'Modified', 'Priority', 'Author'));
+      if (hasPriority || hasAuthor || hasBlockedBy) {
+        console.log(buildLine('Name', 'Status', 'Modified', 'Priority', 'Author', 'Blocked by'));
       }
       for (const { change, status, timeAgo } of rows) {
-        console.log(buildLine(change.name, status, timeAgo, change.priority ?? '', change.author ?? ''));
+        console.log(buildLine(change.name, status, timeAgo, change.priority ?? '', change.author ?? '', (change.blockedBy ?? []).join(', ')));
       }
       for (const finding of nestedFindings) {
         console.log('');

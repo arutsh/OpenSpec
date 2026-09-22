@@ -31,6 +31,51 @@ If this stays a single-device tool, I recommend keeping SQLite to avoid
 adding a service to operate; shared state would need a separate sync design.
 \`\`\``;
 
+const DEPENDENCY_CHECK_GUIDANCE = `### Check for dependencies
+
+This project may have other active changes yours could depend on. Ask once,
+early, rather than deciding silently mid-conversation:
+
+"This project has N other active change(s). Want me to check whether this one
+depends on any of them as we go? (Uses \`openspec validate --check-dependencies\`,
+which only looks for shared capability areas - it won't write anything without
+asking first.)"
+
+- **If yes:** before offering to capture a new change, and again whenever the
+  change's capability scope changes (a spec delta gets added, or an existing
+  one changes which capability it targets), run
+  \`openspec validate "<name>" --check-dependencies --json\` (once the change
+  has at least one spec delta - there is nothing to compare before that) and
+  read its findings. For each change named in a finding, read that change's
+  \`proposal.md\` \`## Why\` / \`## What Changes\` (via \`openspec status --change
+  "<name>" --json\` -> \`changeRoot\`/\`artifactPaths\`) and judge the
+  relationship: coincidental (same capability, unrelated concern - no
+  action), a genuine ordering dependency (this change assumes the other lands
+  first), or the reverse (the other should depend on this one). Before
+  offering, check that the edge wouldn't create a cycle: from the active
+  changes already on hand, read the *target*'s current \`depends_on\` and walk
+  it transitively - if that chain reaches the change being discussed, the
+  target already (transitively) depends on it, so the edge runs the wrong
+  way; say so instead of offering it. Otherwise offer the genuine dependency
+  to the user - never write it silently: "It looks like this builds on
+  \`<other-change>\` - want me to record that as a dependency?" A yes on a
+  change that already exists is written straight to its \`.openspec.yaml\`
+  (\`depends_on: [<name>, ...]\`, preserving any entries already there); a yes
+  before the change exists is passed as \`--depends-on <name>\` to
+  \`openspec new change\`. Either way, immediately re-run
+  \`openspec validate "<name>"\` afterward as a backstop - the two-node walk
+  above only checks the pair being discussed, not a cycle introduced earlier
+  in the same session - and if it now reports an existence/self-reference/
+  cycle error, undo the write and tell the user why.
+- **If no:** don't run the check for the rest of the session. The user can
+  still set \`depends_on\` manually at any time, and can turn the check back on
+  by asking.
+
+A dependency on an *archived* change is never worth recording - once
+archived it is already reflected in the specs, so there is nothing left to
+depend on. \`openspec validate --check-dependencies\` only considers active
+changes, so this never comes up as a finding.`;
+
 /**
  * Explore's handoffs. A custom profile can install explore without propose or
  * apply, so each reference is resolved at generation time (see
@@ -184,6 +229,8 @@ Then read the project's own context from the resolved root - \`<root.path>/opens
 
 Ground your thinking in these. They are constraints for you to follow, not content to reproduce: do NOT copy them into the conversation or into any artifact you create.
 
+${DEPENDENCY_CHECK_GUIDANCE}
+
 ### When no change exists
 
 Think freely. When insights crystallize, you might offer:
@@ -225,6 +272,7 @@ If the user mentions a change or you detect one is relevant:
     | Scope changed              | \`proposal.md\`                     |
     | New work identified        | \`tasks.md\`                        |
     | Assumption invalidated     | Relevant artifact                   |
+    | Possible dependency on another active change | \`.openspec.yaml\` (\`depends_on\`) |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"
@@ -518,6 +566,8 @@ Ground your thinking in these. They are constraints for you to follow, not conte
 
 If the user mentioned a specific change name, read its artifacts for context.
 
+${DEPENDENCY_CHECK_GUIDANCE}
+
 ### When no change exists
 
 Think freely. When insights crystallize, you might offer:
@@ -559,6 +609,7 @@ If the user mentions a change or you detect one is relevant:
     | Scope changed              | \`proposal.md\`                     |
     | New work identified        | \`tasks.md\`                        |
     | Assumption invalidated     | Relevant artifact                   |
+    | Possible dependency on another active change | \`.openspec.yaml\` (\`depends_on\`) |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"

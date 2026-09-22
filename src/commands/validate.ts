@@ -18,6 +18,7 @@ import {
 import { isInteractive, resolveNoInteractive } from '../utils/interactive.js';
 import { getSpecIds } from '../utils/item-discovery.js';
 import { getAvailableChanges } from './workflow/shared.js';
+import { computeDependencyFindings, type DependencyIssue } from '../core/change-dependencies.js';
 import { nearestMatches } from '../utils/match.js';
 import { promises as fs } from 'fs';
 import { getTaskProgressDetailForChange, type SchemaGlobCache } from '../utils/task-progress.js';
@@ -34,6 +35,7 @@ interface ExecuteOptions {
   report?: string;
   type?: string;
   strict?: boolean;
+  checkDependencies?: boolean;
   json?: boolean;
   noInteractive?: boolean;
   interactive?: boolean; // Commander sets this to false when --no-interactive is used
@@ -137,14 +139,14 @@ export class ValidateCommand {
       await this.runBulkValidation(root, {
         changes: !!options.all || !!options.changes,
         specs: !!options.all || !!options.specs,
-      }, { strict: !!options.strict, json: !!options.json, concurrency: options.concurrency, noInteractive: resolveNoInteractive(options), findingsScope });
+      }, { strict: !!options.strict, checkDependencies: !!options.checkDependencies, json: !!options.json, concurrency: options.concurrency, noInteractive: resolveNoInteractive(options), findingsScope });
       return;
     }
 
     // No item and no flags
     if (!itemName) {
       if (interactive) {
-        await this.runInteractiveSelector(root, { strict: !!options.strict, json: !!options.json, concurrency: options.concurrency });
+        await this.runInteractiveSelector(root, { strict: !!options.strict, checkDependencies: !!options.checkDependencies, json: !!options.json, concurrency: options.concurrency });
         return;
       }
       this.printNonInteractiveHint(root);
@@ -154,7 +156,7 @@ export class ValidateCommand {
 
     // Direct item validation with type detection or override
     const typeOverride = this.normalizeType(options.type);
-    await this.validateDirectItem(root, itemName, { typeOverride, strict: !!options.strict, json: !!options.json });
+    await this.validateDirectItem(root, itemName, { typeOverride, strict: !!options.strict, checkDependencies: !!options.checkDependencies, json: !!options.json });
   }
 
   private normalizeType(value?: string): ItemType | undefined {
@@ -176,7 +178,7 @@ export class ValidateCommand {
     return ids.sort();
   }
 
-  private async runInteractiveSelector(root: ResolvedOpenSpecRoot, opts: { strict: boolean; json: boolean; concurrency?: string }): Promise<void> {
+  private async runInteractiveSelector(root: ResolvedOpenSpecRoot, opts: { strict: boolean; checkDependencies: boolean; json: boolean; concurrency?: string }): Promise<void> {
     const { select } = await import('@inquirer/prompts');
     const choice = await select({
       message: 'What would you like to validate?',
@@ -203,7 +205,7 @@ export class ValidateCommand {
       return;
     }
     const picked = await select<{ type: ItemType; id: string }>({ message: 'Pick an item', choices: items });
-    await this.validateByType(root, picked.type, picked.id, opts);
+    await this.validateByType(root, picked.type, picked.id, opts, changes);
   }
 
   private printNonInteractiveHint(root: ResolvedOpenSpecRoot): void {
@@ -215,7 +217,7 @@ export class ValidateCommand {
     console.error('Or run in an interactive terminal.');
   }
 
-  private async validateDirectItem(root: ResolvedOpenSpecRoot, itemName: string, opts: { typeOverride?: ItemType; strict: boolean; json: boolean }): Promise<void> {
+  private async validateDirectItem(root: ResolvedOpenSpecRoot, itemName: string, opts: { typeOverride?: ItemType; strict: boolean; checkDependencies: boolean; json: boolean }): Promise<void> {
     const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
     const isChange = changes.includes(itemName);
     const isSpec = specs.includes(itemName);
@@ -274,7 +276,7 @@ export class ValidateCommand {
       return;
     }
 
-    await this.validateByType(root, type, itemName, opts);
+    await this.validateByType(root, type, itemName, opts, changes);
   }
 
   /**
@@ -295,7 +297,13 @@ export class ValidateCommand {
     };
   }
 
-  private async validateByType(root: ResolvedOpenSpecRoot, type: ItemType, id: string, opts: { strict: boolean; json: boolean }): Promise<void> {
+  private async validateByType(
+    root: ResolvedOpenSpecRoot,
+    type: ItemType,
+    id: string,
+    opts: { strict: boolean; checkDependencies: boolean; json: boolean },
+    activeChangeIds?: string[]
+  ): Promise<void> {
     // `--type` skips the membership check above, so the name still has to be
     // guarded before it is joined onto a directory. `show` already rejects a
     // traversing id.
@@ -338,6 +346,9 @@ export class ValidateCommand {
         mainSpecsDir: root.specsDir,
         projectRoot: root.path,
       });
+      const activeIds = activeChangeIds ?? (await this.listChangeIds(root));
+      const dependencyFindings = await this.dependencyFindingsFor(root, id, activeIds, opts.checkDependencies);
+      this.applyDependencyFindings(report, dependencyFindings);
       const durationMs = Date.now() - start;
       this.printReport('change', id, report, durationMs, opts.json, root);
       // Non-zero exit if invalid (keeps enriched output test semantics)
@@ -440,7 +451,7 @@ export class ValidateCommand {
     }
   }
 
-  private async runBulkValidation(root: ResolvedOpenSpecRoot, scope: { changes: boolean; specs: boolean }, opts: { strict: boolean; json: boolean; concurrency?: string; noInteractive?: boolean; findingsScope?: BulkScope }): Promise<void> {
+  private async runBulkValidation(root: ResolvedOpenSpecRoot, scope: { changes: boolean; specs: boolean }, opts: { strict: boolean; checkDependencies: boolean; json: boolean; concurrency?: string; noInteractive?: boolean; findingsScope?: BulkScope }): Promise<void> {
     const spinner = !opts.json && !opts.noInteractive ? ora('Validating...').start() : undefined;
     const [changeIds, specIds] = await Promise.all([
       scope.changes ? this.listChangeIds(root) : Promise.resolve<string[]>([]),
@@ -546,6 +557,26 @@ export class ValidateCommand {
     spinner?.stop();
 
     results.sort((a, b) => a.id.localeCompare(b.id));
+
+    if (scope.changes && changeIds.length > 0) {
+      const archivedIds = await this.listArchivedChangeIds(root);
+      const dependencyFindings = await computeDependencyFindings(
+        root.changesDir,
+        root.path,
+        changeIds,
+        archivedIds,
+        opts.checkDependencies
+      );
+      passed = 0;
+      failed = 0;
+      for (const res of results) {
+        if (res.type === 'change') {
+          this.applyDependencyFindings(res, dependencyFindings.get(res.id) ?? []);
+        }
+        if (res.valid) passed++; else failed++;
+      }
+    }
+
     const summary = {
       totals: { items: results.length, passed, failed },
       byType: {
@@ -595,6 +626,43 @@ export class ValidateCommand {
     } catch (error: any) {
       if (error?.code === 'ENOENT') return [];
       throw error;
+    }
+  }
+
+  /**
+   * Resolves the `depends_on` findings for a single change: always-on
+   * existence/self-reference/cycle checks, plus the opt-in capability-overlap
+   * suggestions when requested. Cycle detection and overlap both need the
+   * whole active-change graph, not just the one change being validated, so
+   * this still reads every active change's metadata - the single-item path
+   * cannot shortcut that the way it can for delta validation.
+   */
+  private async dependencyFindingsFor(
+    root: ResolvedOpenSpecRoot,
+    id: string,
+    activeChangeIds: string[],
+    checkDependencies: boolean
+  ): Promise<DependencyIssue[]> {
+    const archivedIds = await this.listArchivedChangeIds(root);
+    const findings = await computeDependencyFindings(
+      root.changesDir,
+      root.path,
+      activeChangeIds,
+      archivedIds,
+      checkDependencies
+    );
+    return findings.get(id) ?? [];
+  }
+
+  /** Merges dependency-graph findings into a validation report in place. */
+  private applyDependencyFindings(
+    report: { valid: boolean; issues: any[] },
+    findings: DependencyIssue[]
+  ): void {
+    if (findings.length === 0) return;
+    report.issues = [...report.issues, ...findings];
+    if (findings.some((f) => f.level === 'ERROR')) {
+      report.valid = false;
     }
   }
 

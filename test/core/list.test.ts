@@ -493,5 +493,78 @@ Regular text that should be ignored
       expect('priority' in withoutMetadata).toBe(false);
       expect('author' in withoutMetadata).toBe(false);
     });
+
+    it('shows a "Blocked by" column naming a still-active dependency', async () => {
+      const changesDir = path.join(tempDir, 'openspec', 'changes');
+      await fs.mkdir(path.join(changesDir, 'add-oauth-provider'), { recursive: true });
+      await fs.mkdir(path.join(changesDir, 'add-oauth-scopes'), { recursive: true });
+      await fs.writeFile(
+        path.join(changesDir, 'add-oauth-scopes', '.openspec.yaml'),
+        'schema: spec-driven\ndepends_on:\n  - add-oauth-provider\n'
+      );
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'changes');
+
+      const headerLine = logOutput[1];
+      expect(headerLine).toContain('Blocked by');
+      const row = logOutput.find(l => l.includes('add-oauth-scopes'));
+      expect(row).toContain('add-oauth-provider');
+    });
+
+    it('omits an archived dependency from "Blocked by" since it is already satisfied', async () => {
+      const changesDir = path.join(tempDir, 'openspec', 'changes');
+      await fs.mkdir(path.join(changesDir, 'archive', 'add-oauth-provider'), { recursive: true });
+      await fs.mkdir(path.join(changesDir, 'add-oauth-scopes'), { recursive: true });
+      await fs.writeFile(
+        path.join(changesDir, 'add-oauth-scopes', '.openspec.yaml'),
+        'schema: spec-driven\ndepends_on:\n  - add-oauth-provider\n'
+      );
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'changes');
+
+      expect(logOutput.some(l => l.includes('Blocked by'))).toBe(false);
+      const row = logOutput.find(l => l.includes('add-oauth-scopes'));
+      expect(row).not.toContain('add-oauth-provider');
+    });
+
+    it('does not break table alignment for a change without depends_on', async () => {
+      const changesDir = path.join(tempDir, 'openspec', 'changes');
+      await fs.mkdir(path.join(changesDir, 'add-oauth-provider'), { recursive: true });
+      await fs.mkdir(path.join(changesDir, 'add-oauth-scopes'), { recursive: true });
+      await fs.writeFile(
+        path.join(changesDir, 'add-oauth-scopes', '.openspec.yaml'),
+        'schema: spec-driven\ndepends_on:\n  - add-oauth-provider\n'
+      );
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'changes');
+
+      const providerLine = logOutput.find(l => l.includes('add-oauth-provider') && !l.includes('Blocked by'));
+      expect(providerLine).toBeDefined();
+      expect(providerLine).toBe(providerLine?.trimEnd());
+    });
+
+    it('includes the raw depends_on array in --json when set, unfiltered', async () => {
+      const changesDir = path.join(tempDir, 'openspec', 'changes');
+      await fs.mkdir(path.join(changesDir, 'archive', 'archived-dep'), { recursive: true });
+      await fs.mkdir(path.join(changesDir, 'add-oauth-scopes'), { recursive: true });
+      await fs.writeFile(
+        path.join(changesDir, 'add-oauth-scopes', '.openspec.yaml'),
+        'schema: spec-driven\ndepends_on:\n  - archived-dep\n'
+      );
+      await fs.mkdir(path.join(changesDir, 'without-metadata'), { recursive: true });
+
+      const listCommand = new ListCommand();
+      await listCommand.execute(tempDir, 'changes', { json: true });
+
+      const parsed = JSON.parse(logOutput.join(''));
+      const withDep = parsed.changes.find((c: any) => c.name === 'add-oauth-scopes');
+      const withoutDep = parsed.changes.find((c: any) => c.name === 'without-metadata');
+
+      expect(withDep.depends_on).toEqual(['archived-dep']);
+      expect('depends_on' in withoutDep).toBe(false);
+    });
   });
 });

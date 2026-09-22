@@ -208,6 +208,7 @@ describe('command completion registry', () => {
       'description',
       'goal',
       'author',
+      'depends-on',
       'schema',
       'json',
       'store',

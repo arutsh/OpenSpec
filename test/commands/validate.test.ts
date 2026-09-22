@@ -240,3 +240,164 @@ describe('top-level validate command', () => {
     expect(result.stderr).not.toContain('What would you like to validate?');
   });
 });
+
+describe('validate: depends_on graph checks', () => {
+  const projectRoot = process.cwd();
+
+  async function makeChange(
+    root: string,
+    id: string,
+    opts: { dependsOn?: string[]; capability?: string; archived?: boolean } = {}
+  ): Promise<void> {
+    const base = opts.archived
+      ? path.join(root, 'openspec', 'changes', 'archive', id)
+      : path.join(root, 'openspec', 'changes', id);
+    await fs.mkdir(base, { recursive: true });
+    const yaml = opts.dependsOn
+      ? `schema: spec-driven\ndepends_on:\n${opts.dependsOn.map((d) => `  - ${d}`).join('\n')}\n`
+      : 'schema: spec-driven\n';
+    await fs.writeFile(path.join(base, '.openspec.yaml'), yaml, 'utf-8');
+    if (opts.capability && !opts.archived) {
+      const specDir = path.join(base, 'specs', opts.capability);
+      await fs.mkdir(specDir, { recursive: true });
+      await fs.writeFile(
+        path.join(specDir, 'spec.md'),
+        [
+          '## ADDED Requirements',
+          `### Requirement: ${id} does something`,
+          `The system SHALL do something for ${id}.`,
+          '',
+          '#### Scenario: works',
+          '- **WHEN** a',
+          '- **THEN** b',
+        ].join('\n'),
+        'utf-8'
+      );
+    }
+  }
+
+  async function withIsoRoot(fn: (root: string) => Promise<void>): Promise<void> {
+    const root = path.join(projectRoot, `test-depends-on-iso-${Math.random().toString(36).slice(2)}`);
+    try {
+      await fn(root);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }
+
+  it('reports an error when depends_on names an unresolved change', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { dependsOn: ['typo-name'], capability: 'cap' });
+      const result = await runCLI(['validate', 'a'], { cwd: root });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("depends_on names unknown change 'typo-name'");
+    });
+  });
+
+  it('reports an error on self-dependency', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { dependsOn: ['a'], capability: 'cap' });
+      const result = await runCLI(['validate', 'a'], { cwd: root });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("depends_on names itself ('a')");
+    });
+  });
+
+  it('reports an error when depends_on fails the metadata schema (e.g. not kebab-case)', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { dependsOn: ['Not_Kebab'], capability: 'cap' });
+      const result = await runCLI(['validate', 'a'], { cwd: root });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('depends_on cannot be verified');
+    });
+  });
+
+  it('does not error when depends_on names an archived change', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'done', { archived: true });
+      await makeChange(root, 'a', { dependsOn: ['done'], capability: 'cap' });
+      const result = await runCLI(['validate', 'a'], { cwd: root });
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  it('reports a cycle error on every change in a direct cycle', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { dependsOn: ['b'], capability: 'cap-a' });
+      await makeChange(root, 'b', { dependsOn: ['a'], capability: 'cap-b' });
+      const resultA = await runCLI(['validate', 'a'], { cwd: root });
+      const resultB = await runCLI(['validate', 'b'], { cwd: root });
+      expect(resultA.exitCode).toBe(1);
+      expect(resultA.stderr).toContain('depends_on cycle: a -> b -> a');
+      expect(resultB.exitCode).toBe(1);
+      expect(resultB.stderr).toContain('depends_on cycle');
+    });
+  });
+
+  it('reports a cycle error on every change in an indirect cycle', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { dependsOn: ['b'], capability: 'cap-a' });
+      await makeChange(root, 'b', { dependsOn: ['c'], capability: 'cap-b' });
+      await makeChange(root, 'c', { dependsOn: ['a'], capability: 'cap-c' });
+      const result = await runCLI(['validate', '--changes', '--json'], { cwd: root });
+      const json = JSON.parse(result.stdout.trim());
+      const issuesById = new Map(json.items.map((i: any) => [i.id, i.issues]));
+      for (const id of ['a', 'b', 'c']) {
+        expect((issuesById.get(id) as any[]).some((iss) => iss.message.includes('depends_on cycle'))).toBe(true);
+      }
+    });
+  });
+
+  it('reports no cycle error for an acyclic dependency chain', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { capability: 'cap-a' });
+      await makeChange(root, 'b', { dependsOn: ['a'], capability: 'cap-b' });
+      const result = await runCLI(['validate', 'b'], { cwd: root });
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  it('--check-dependencies is opt-in: no finding without the flag, an informational finding with it', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { capability: 'shared' });
+      await makeChange(root, 'b', { capability: 'shared' });
+
+      const withoutFlag = await runCLI(['validate', 'a'], { cwd: root });
+      expect(withoutFlag.exitCode).toBe(0);
+      expect(withoutFlag.stderr).not.toContain('consider depends_on');
+
+      const withFlag = await runCLI(['validate', 'a', '--check-dependencies'], { cwd: root });
+      expect(withFlag.exitCode).toBe(0);
+      expect(withFlag.stderr).toContain("shares capability path(s) shared with 'b'; consider depends_on");
+    });
+  });
+
+  it('suppresses the capability-overlap finding once a depends_on relationship is declared', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { dependsOn: ['b'], capability: 'shared' });
+      await makeChange(root, 'b', { capability: 'shared' });
+      const result = await runCLI(['validate', 'a', '--check-dependencies'], { cwd: root });
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).not.toContain('consider depends_on');
+    });
+  });
+
+  it('reports no capability-overlap finding when changes share no capability path', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { capability: 'cap-a' });
+      await makeChange(root, 'b', { capability: 'cap-b' });
+      const result = await runCLI(['validate', 'a', '--check-dependencies'], { cwd: root });
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).not.toContain('consider depends_on');
+    });
+  });
+
+  it('strict mode still passes when the only findings are capability-overlap suggestions', async () => {
+    await withIsoRoot(async (root) => {
+      await makeChange(root, 'a', { capability: 'shared' });
+      await makeChange(root, 'b', { capability: 'shared' });
+      const result = await runCLI(['validate', 'a', '--check-dependencies', '--strict'], { cwd: root });
+      expect(result.exitCode).toBe(0);
+    });
+  });
+});

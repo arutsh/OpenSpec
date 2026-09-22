@@ -76,14 +76,14 @@ function specDrivenTitles(): Record<string, string> {
 }
 
 const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
-  getExploreSkillTemplate: 'b17a409b5634b5e48864a87f038f2111a74c2442288e9f4cb7a704f86b6d75e7',
+  getExploreSkillTemplate: 'fece8b3a320972c8beff7153d5adb798d28f78f4525efbbaf61d9b498f6c62ff',
   getNewChangeSkillTemplate: '0e5035b7b42198afc430206a1dbc9579096650ef0813d85e837d5a6cd0b98a85',
   getContinueChangeSkillTemplate: '550dc22bc8e0921b1ca5cef867379c4f370c5f1902c420bf9fa3bbfa75cea933',
   getApplyChangeSkillTemplate: '04ae407c97b5f9cb0cc15199fe877ccc7cd1eff78bfe10ad70c16a112b10a661',
   getFfChangeSkillTemplate: '6fb5492e78b9ceec068949080ec9f2e0d2a8baff75a2fe33d07ad33ffe542b65',
   getSyncSpecsSkillTemplate: 'bc80fe9b07eaa289e5eb8a3ce65eb7df722a16d864e37283c678220712e4f230',
   getOnboardSkillTemplate: '7d92756ffc0b30053838716005610daf3f65c3fa011f3f4d29b6488f303f9cfb',
-  getOpsxExploreCommandTemplate: 'f6cf22825643281d653355745623a6c1a4566db46cc2f262d2282243c6d8169a',
+  getOpsxExploreCommandTemplate: 'c0f5f8668d521222677e465efd1c03e0b5e290ef575c64f88b648419c1aaf814',
   getOpsxNewCommandTemplate: '6d504fef1e0d4ced7c423f4cc9d9d2cee11b1a6224edf685e06a3f0757e0ebff',
   getOpsxContinueCommandTemplate: 'ace5c9cc239c12b57dc86fd9a1c02a6ca467cb8e1245127340c07ab1b9d37c11',
   getOpsxApplyCommandTemplate: 'd70cecce3b7d1dd4dbd5fd1fc2bccb538f5e61f5b43d520e4beca896e3f9e6b3',
@@ -104,7 +104,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
 };
 
 const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
-  'openspec-explore': '8b02eb77ae87a4374a43ad33930e5ea19cbaf1c8a7624d5b613c03d7ee1c5f14',
+  'openspec-explore': '74a95c17bda5a8131c472eda527f9cc6c5b1ac5abb2c1920f853f5875693f690',
   'openspec-new-change': '27e09d43785953827efc9a98bb9d6cf06db48fe6abe7e1c049409fe5b5061323',
   'openspec-continue-change': '182f015de6a1a114c79a6106c0565fd71f368d629641d0ad088de54bd871b52f',
   'openspec-apply-change': 'f3e92c229fab8d77df9f0a77dcb117cf46279b53a208d53aed89bfe0bab2ac09',

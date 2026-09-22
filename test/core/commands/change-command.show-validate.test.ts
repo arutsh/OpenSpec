@@ -188,6 +188,35 @@ describe('ChangeCommand.show/validate', () => {
   it('validate rejects a traversing change name', async () => {
     await expect(cmd.validate(path.join('..', '..', 'outside'))).rejects.toThrow(/not found at/u);
   });
+
+  it('validate (deprecated alias) reports a depends_on self-reference like the primary validate command', async () => {
+    const selfDepDir = path.join(tempRoot, 'openspec', 'changes', 'self-dep');
+    await fs.mkdir(selfDepDir, { recursive: true });
+    await fs.writeFile(
+      path.join(selfDepDir, 'proposal.md'),
+      '# Change: Self Dep\n\n## Why\nConsistency in tests.\n\n## What Changes\n- **auth:** Add requirement',
+      'utf-8'
+    );
+    await fs.writeFile(
+      path.join(selfDepDir, '.openspec.yaml'),
+      'schema: spec-driven\ndepends_on:\n  - self-dep\n',
+      'utf-8'
+    );
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    try {
+      console.log = (msg?: any, ...args: any[]) => {
+        logs.push([msg, ...args].filter(Boolean).join(' '));
+      };
+      await cmd.validate('self-dep', { json: true });
+      const parsed = JSON.parse(logs.join('\n'));
+      expect(parsed.valid).toBe(false);
+      expect(parsed.issues.some((i: any) => i.message.includes("depends_on names itself ('self-dep')"))).toBe(true);
+    } finally {
+      console.log = origLog;
+    }
+  });
 });
 
 describe('ChangeCommand title from the packaged proposal template (#1138)', () => {

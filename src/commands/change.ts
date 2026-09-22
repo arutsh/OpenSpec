@@ -8,7 +8,8 @@ import { ChangeParser } from '../core/parsers/change-parser.js';
 import { Change, Delta } from '../core/schemas/index.js';
 import type { RootOutput } from '../core/root-selection.js';
 import { isInteractive } from '../utils/interactive.js';
-import { getActiveChangeIds } from '../utils/item-discovery.js';
+import { getActiveChangeIds, getArchivedChangeIds } from '../utils/item-discovery.js';
+import { computeDependencyFindings } from '../core/change-dependencies.js';
 import {
   describeNestedChange,
   findNestedChangesIn,
@@ -542,13 +543,36 @@ export class ChangeCommand {
     }
     
     const validator = new Validator(options?.strict || false);
+    const projectRoot = path.dirname(path.dirname(changesPath));
     const report = await validator.validateChangeDeltaSpecs(changeDir, {
       // Derived from changesPath so the main specs come from the same root the
       // change itself was resolved against.
       mainSpecsDir: path.join(path.dirname(changesPath), 'specs'),
-      projectRoot: path.dirname(path.dirname(changesPath)),
+      projectRoot,
     });
-    
+
+    // Deprecated alias for `openspec validate`: keeps the same depends_on
+    // existence/self-reference/cycle checks so it never passes what the
+    // primary command rejects (#1 review finding).
+    const [activeIds, archivedIds] = await Promise.all([
+      getActiveChangeIds(projectRoot),
+      getArchivedChangeIds(projectRoot),
+    ]);
+    const dependencyFindings = await computeDependencyFindings(
+      changesPath,
+      projectRoot,
+      activeIds,
+      archivedIds,
+      false
+    );
+    const findings = dependencyFindings.get(changeName) ?? [];
+    if (findings.length > 0) {
+      report.issues = [...report.issues, ...findings];
+      if (findings.some((f) => f.level === 'ERROR')) {
+        report.valid = false;
+      }
+    }
+
     if (options?.json) {
       console.log(JSON.stringify(report, null, 2));
     } else {

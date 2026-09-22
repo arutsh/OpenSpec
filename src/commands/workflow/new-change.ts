@@ -32,6 +32,7 @@ export interface NewChangeOptions {
   description?: string;
   goal?: string;
   author?: string;
+  dependsOn?: string;
   schema?: string;
   store?: string;
   storePath?: string;
@@ -156,6 +157,9 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       metadata: {
         ...(options.goal ? { goal: options.goal } : {}),
         ...(options.author ? { author: options.author } : {}),
+        ...(options.dependsOn
+          ? { depends_on: options.dependsOn.split(',').map((v) => v.trim()).filter(Boolean) }
+          : {}),
       },
     });
 
