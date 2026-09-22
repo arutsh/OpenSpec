@@ -7,6 +7,7 @@ import { readProjectConfig } from '../core/project-config.js';
 import { isKebabId } from '../core/id.js';
 import { resolveSchema } from '../core/artifact-graph/resolver.js';
 import { isSpecsArtifactPath } from '../core/artifact-graph/outputs.js';
+import { getAvailableChanges } from '../commands/workflow/shared.js';
 import type { ChangeMetadata } from '../core/change-metadata/index.js';
 
 const DEFAULT_SCHEMA = 'spec-driven';
@@ -22,7 +23,7 @@ export interface CreateChangeOptions {
   /** Directory that should contain the change directories */
   changesDir?: string;
   /** Additional metadata to persist in the change's .openspec.yaml */
-  metadata?: Partial<Pick<ChangeMetadata, 'goal' | 'affected_areas' | 'initiative' | 'author'>>;
+  metadata?: Partial<Pick<ChangeMetadata, 'goal' | 'affected_areas' | 'initiative' | 'author' | 'depends_on'>>;
 }
 
 /**
@@ -185,6 +186,22 @@ export async function createChange(
   // Check if change already exists
   if (await FileSystemUtils.directoryExists(changeDir)) {
     throw new Error(`Change '${name}' already exists at ${changeDir}`);
+  }
+
+  // Validate --depends-on before scaffolding anything: a typo or unknown
+  // name should fail fast, not leave a half-created change behind.
+  const dependsOn = options.metadata?.depends_on;
+  if (dependsOn && dependsOn.length > 0) {
+    if (dependsOn.includes(name)) {
+      throw new Error(`Change '${name}' cannot depend on itself`);
+    }
+    const activeChanges = await getAvailableChanges(projectRoot, options.changesDir);
+    const unknown = dependsOn.filter((dep) => !activeChanges.includes(dep));
+    if (unknown.length > 0) {
+      throw new Error(
+        `--depends-on names change(s) that are not currently active: ${unknown.join(', ')}`
+      );
+    }
   }
 
   const schema = resolveSchema(schemaName, projectRoot);

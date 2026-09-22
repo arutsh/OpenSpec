@@ -561,11 +561,14 @@ A change with zero spec deltas fails validation unless its `.openspec.yaml` decl
 | `--archived` | Validate that archived changes have all tasks completed (for pre-commit linting) |
 | `--type <type>` | Specify type when name is ambiguous: `change` or `spec` |
 | `--strict` | Enable strict validation mode |
+| `--check-dependencies` | Report other active changes that share a capability path with no declared `depends_on` relationship (informational; never fails `--strict`) |
 | `--json` | Output as JSON |
 | `--concurrency <n>` | Max parallel validations (default: 6, or `OPENSPEC_CONCURRENCY` env) |
 | `--no-interactive` | Disable prompts |
 
 `--archived` is its own scope: it does not validate spec deltas (already applied at archive time), it verifies that every change under `changes/archive/` has all of its `tasks.md` checkboxes ticked, exiting non-zero if any are unchecked. This catches changes that were archived with unfinished work — handy in a pre-commit hook.
+
+A change's `depends_on` (set via `openspec new change --depends-on` or by hand-editing `.openspec.yaml`) is always checked: a name that resolves to neither an active nor an archived change, a change naming itself, or a cycle among active changes are all errors. A dependency on an archived change is not an error — it's already satisfied. `--check-dependencies` is a separate, opt-in pass on top of that: it compares capability paths (`specs/<capability-path>/`) across active changes and suggests a `depends_on` for any pair that shares one with no relationship declared either way.
 
 **Examples:**
 
@@ -725,6 +728,7 @@ or `00001-add-auth`.
 | `--description <text>` | Description to add to `README.md` |
 | `--goal <text>` | Optional goal metadata to store with the change |
 | `--author <name>` | Optional author metadata to store with the change (default: `git config user.name`) |
+| `--depends-on <names>` | Comma-separated names of other active changes this one builds on (validated against active changes) |
 | `--schema <name>` | Workflow schema to use |
 | `--store <id>` | Store id to use as the OpenSpec root (a store is a standalone OpenSpec repo you've registered) |
 | `--json` | Output JSON |

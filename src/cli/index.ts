@@ -514,12 +514,13 @@ program
   .option('--report <full|findings>', 'Select bulk report content: full|findings; combine with --json for JSON')
   .option('--type <type>', 'Specify item type when ambiguous: change|spec')
   .option('--strict', 'Enable strict validation mode')
+  .option('--check-dependencies', 'Report changes that share a capability path with no declared depends_on relationship (informational, never fails --strict)')
   .option('--json', 'Output validation results as JSON')
   .option('--concurrency <n>', 'Max concurrent validations (defaults to env OPENSPEC_CONCURRENCY or 6)')
   .option('--no-interactive', 'Disable interactive prompts')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)
   .addOption(hiddenStorePathOption())
-  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; archived?: boolean; report?: string; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; storePath?: string }) => {
+  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; archived?: boolean; report?: string; type?: string; strict?: boolean; checkDependencies?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; storePath?: string }) => {
     try {
       const validateCommand = new ValidateCommand();
       await validateCommand.execute(itemName, options);
@@ -733,6 +734,7 @@ newCmd
   .option('--description <text>', 'Description to add to README.md')
   .option('--goal <text>', 'Optional goal metadata to store with the change')
   .option('--author <name>', "Optional author metadata to store with the change (default: git config user.name)")
+  .option('--depends-on <names>', 'Comma-separated names of other active changes this one builds on')
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
   .option('--json', 'Output as JSON')
   .option('--store <id>', STORE_OPTION_DESCRIPTION)

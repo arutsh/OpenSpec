@@ -34,6 +34,10 @@ export const ChangeMetadataSchema = z.object({
   priority: z.enum(['low', 'medium', 'high']).optional(),
   author: z.string().min(1).optional(),
   affected_areas: z.array(z.string().min(1)).optional(),
+  // Other changes this one builds on, by id. Structural check only (kebab-case
+  // shape) - whether each name actually resolves to an active or archived
+  // change is a cross-file concern validated separately (openspec validate).
+  depends_on: z.array(KebabIdentifierSchema('depends_on entry')).optional(),
   initiative: InitiativeLinkSchema.optional(),
   // Declares that this change intentionally has no spec deltas (pure refactor,
   // tooling, or docs work). Validation accepts zero deltas, and the artifact

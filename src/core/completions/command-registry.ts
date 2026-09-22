@@ -115,6 +115,10 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       COMMON_FLAGS.type,
       COMMON_FLAGS.strict,
+      {
+        name: 'check-dependencies',
+        description: 'Report changes that share a capability path with no declared depends_on relationship',
+      },
       COMMON_FLAGS.jsonValidation,
       {
         name: 'concurrency',
@@ -277,6 +281,11 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           {
             name: 'author',
             description: 'Optional author metadata to store with the change',
+            takesValue: true,
+          },
+          {
+            name: 'depends-on',
+            description: 'Comma-separated names of other active changes this one builds on',
             takesValue: true,
           },
           {
